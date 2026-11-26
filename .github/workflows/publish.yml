@@ -26,15 +26,12 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  publish:
+  # Fetching and deploying are separate jobs, as deploy-pages expects: in one
+  # job, it doesn't find the github-pages artifact uploaded beside a
+  # cross-repository download.
+  fetch:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    permissions:
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Mint an installation token for omnipython-builds
         id: app-token
@@ -65,5 +62,16 @@ jobs:
         with:
           path: site
 
+  publish:
+    needs: fetch
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
       - id: deployment
         uses: actions/deploy-pages@v5
