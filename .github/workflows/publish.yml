@@ -1,0 +1,69 @@
+# Publishes https://apps.omnipython.org/: the all-apps page that
+# omnipython-builds' "All-apps browser page" workflow builds. That workflow
+# sends an allapps-built event naming its run once a build on its main
+# branch passes; this downloads the run's allapps-page artifact and deploys
+# it to this repository's GitHub Pages site. Nothing built is committed here.
+#
+# By hand: give the run id of any successful build to publish it, which is
+# also how an earlier build is put back.
+name: Publish
+
+on:
+  repository_dispatch:
+    types: [allapps-built]
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: Run id of an "All-apps browser page" build in omnipython-builds
+        required: true
+
+permissions:
+  contents: read
+
+# One deployment at a time; a newer one waits rather than cancelling this.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Mint an installation token for omnipython-builds
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.PYDEVICES_APP_ID }}
+          private-key: ${{ secrets.PYDEVICES_APP_PRIVATE_KEY }}
+          owner: PyDevices
+          repositories: omnipython-builds
+
+      - name: Download the page
+        uses: actions/download-artifact@v8
+        with:
+          name: allapps-page
+          path: site
+          repository: PyDevices/omnipython-builds
+          run-id: ${{ inputs.run_id || github.event.client_payload.run_id }}
+          github-token: ${{ steps.app-token.outputs.token }}
+
+      - name: Check it is a whole page
+        run: |
+          for f in index.html micropython.mjs micropython.wasm manifest.webmanifest sw.js allapps.json; do
+            test -s "site/$f" || { echo "the artifact has no $f" >&2; exit 1; }
+          done
+          cat site/allapps.json
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+
+      - id: deployment
+        uses: actions/deploy-pages@v5
